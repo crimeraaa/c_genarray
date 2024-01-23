@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 # Make this an executable via: `chmod +x ./disassemble.sh`
 
-obj=./obj/genarray.o
+if [[ $# -ne 1 ]]; then
+    echo "Need exactly 1 command-line argument!"
+    printf "Usage: %s <object_file>\n" $0
+    exit 1
+fi
+
+obj=$1
 # Use an array of strings as whitespaces are considered separate arguments.
 args=(
     "-Mintel"

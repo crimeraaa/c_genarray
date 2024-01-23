@@ -1,4 +1,13 @@
+#include <errno.h>
 #include "genarray.h"
+
+static inline void logerror(const char *file, int line, const char *info)
+{
+    const char *errno_message = (errno != 0) ? strerror(errno) : "";
+    fprintf(stderr, "%s:%i : %s. %s\n", file, line, info, errno_message);
+}
+
+#define logerror(func, info) logerror(__FILE__, __LINE__, func "(): " info)
 
 /**
  * BEGIN:   CORRECT ASSIGN/DELETE METHODS
@@ -38,28 +47,30 @@ static void ga_erase_default(genarray *self, void *p_src)
  * END: CORRECT ASSIGN/ERASE FUNCTIONS
  */
 
+genarray ga_create(size_t n_sizeof, ga_writefn write, ga_erasefn erase)
+{
+    genarray inst; 
+    ga_init(&inst, n_sizeof, write, erase);
+    return inst;
+}
+
 void ga_init(genarray *self, size_t n_sizeof, ga_writefn write, ga_erasefn erase)
 {
     if (self == NULL) {
-        perror("ga_init- self is NULL");
+        logerror("ga_init", "received self == NULL");
         return;
     }
-    memset(self, 0, sizeof(*self));
+    // CONTAINER TYPE INFORMATION (or lack thereof)
+    self->m_pbuffer = NULL;
+    self->m_ncount = 0;
+    self->m_ncapacity = 0;
     self->m_nsizeof = n_sizeof;
-    // @warning Likely to be very very very error prone!!
-    if (write != NULL) {        
-        self->callback.write = write;
-        self->write = ga_write_user;
-    } else {
-        self->write = ga_write_default;
-    }
-    
-    if (erase != NULL) {
-        self->callback.erase = erase;
-        self->erase = ga_erase_user;
-    } else {
-        self->erase = ga_erase_default;
-    }
+    // PRIMARY FUNCTIONS 
+    self->write = (write != NULL) ? ga_write_user : ga_write_default;
+    self->erase = (erase != NULL) ? ga_erase_user : ga_erase_default;
+    // CALLBACK FUNCTIONS
+    self->callback.write = write; // OK if NULL
+    self->callback.erase = erase; // OK if NULL
 }
 
 void ga_deinit(genarray *self)
@@ -78,16 +89,53 @@ void ga_deinit(genarray *self)
  * BEGIN:   DATA ACCESS METHODS
 */
 
+size_t ga_length(const genarray *self)
+{
+    return self->m_ncount;
+}
+
+size_t ga_capacity(const genarray *self)
+{
+    return self->m_ncapacity;
+}
+
+size_t ga_bytes_length(const genarray *self)
+{
+    return self->m_nsizeof * self->m_ncount;
+}
+
+size_t ga_bytes_capacity(const genarray *self)
+{
+    return self->m_nsizeof * self->m_ncapacity;
+}
+
 const void *ga_begin_rd(const genarray *self)
 {
     return &self->m_pbuffer[0];
 }
 
+static inline size_t get_end_index(const genarray *self)
+{
+    // Subtract 1 so we don't rereference the top index as it's uninitialized.
+    return (self->m_ncount > 0) ? self->m_nsizeof * (self->m_ncount - 1) : 0;
+}
+
 const void *ga_end_rd(const genarray *self)
 {
-    // Last valid index.
-    size_t n_index = self->m_nsizeof * (self->m_ncount - 1);
+    // Either the topmost nonzero index, or 0 itself to avoid underflow.
+    size_t n_index = get_end_index(self);
     return &self->m_pbuffer[n_index] + self->m_nsizeof;
+}
+
+const void *ga_retrieve_rd(const genarray *self, size_t n_index)
+{
+    size_t n_limit = self->m_nsizeof * self->m_ncount;
+    // Actual index since it's a byte array
+    if ((n_index = self->m_nsizeof * n_index) >= n_limit) {
+        logerror("ga_retrieve_rd", "out of bounds index");
+        return NULL;
+    }
+    return &self->m_pbuffer[n_index];
 }
 
 void *ga_begin_wr(genarray *self)
@@ -100,22 +148,9 @@ void *ga_end_wr(genarray *self)
     return (void*)ga_end_rd(self); // BAD
 }
 
-const void *ga_retrieve_rd(const genarray *self, size_t n_index)
-{
-    size_t n_limit = self->m_nsizeof * self->m_ncount;
-    // Actual index since it's a byte array
-    n_index = self->m_nsizeof * n_index;
-    if (n_index >= n_limit) {
-        perror("ga_retrieve_rd- out of bounds index");
-        return NULL;
-    }
-    return &self->m_pbuffer[n_index];
-}
-
 void *ga_retrieve_wr(genarray *self, size_t n_index)
 {
-    // BAD!!!!
-    return (void*)ga_retrieve_rd(self, n_index);
+    return (void*)ga_retrieve_rd(self, n_index); // BAD!!!!
 }
 
 /**
@@ -135,13 +170,12 @@ static inline size_t ga_newsize(size_t n_capacity)
 bool ga_push_back(genarray *self, void *p_item)
 {
     if (self->m_ncount + 1 > self->m_ncapacity) {
-        size_t n_newsize = ga_newsize(self->m_ncapacity);
-        if (ga_resize(self, n_newsize) == false) {
-            perror("ga_push_back- failed to resize buffer");
+        if (ga_resize(self, ga_newsize(self->m_ncapacity)) == false) {
+            logerror("ga_push_back", "failed to resize buffer");
             return false;
         }
     }
-    // Actual index in terms of accessing contiguous elements in raw bytes.
+    // Actual index in terms of accessing contiguous elementsin raw bytes.
     size_t n_index = self->m_ncount * self->m_nsizeof;
     self->write(self, &self->m_pbuffer[n_index], p_item);
     self->m_ncount++;
@@ -159,7 +193,7 @@ bool ga_resize(genarray *self, size_t n_newsize)
     // Remember: realloc copies and frees the original memory on success!
     ga_byte *p_dummy = realloc(self->m_pbuffer, n_alloc);
     if (p_dummy == NULL) {
-        perror("ga_resize- failed to allocate memory for new buffer");
+        logerror("ga_resize", "failed to allocate memory for new buffer");
         return false;
     }
 

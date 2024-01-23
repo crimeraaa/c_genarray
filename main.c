@@ -28,24 +28,50 @@
  * ```
  */
 
-int main(void)
+void test_write(genarray *self)
 {
-    genarray ga; 
-    genarray *inst = &ga;
-    ga_init(inst, sizeof(int), NULL, NULL);
     int arr[] = {2, 3, 5, 7, 11, 13, 17, 19, 23};
     const size_t len = sizeof(arr) / sizeof(*arr);
     for (size_t i = 0; i < len; i++) {
-        ga_push_back(inst, &arr[i]);
+        ga_push_back(self, &arr[i]);
     }
-    ga_foreach_rd(item, inst, int) {
+}
+
+void test_foreach(const genarray *self)
+{
+    printf("test_foreach():\n");
+    ga_foreach(int, item, self) {
         printf("%i\n", *item);
     }
-    for (size_t i = 0; i < inst->m_ncount; i++) {
-        const int *item = ga_retrieve_rd(inst, i);
+    printf("\n");
+}
+
+void test_forloop(const genarray *self)
+{
+    printf("test_forloop():\n");
+    for (size_t i = 0; i < ga_length(self); i++) {
+        const int *item = ga_retrieve_rd(self, i);
         printf("ga[%zu] = %i (%p)\n", i, *item, (void*)item);
     }
-    printf("end = %p\n", ga_end_rd(inst));
+    printf("ga[%zu] = end = %p\n", ga_length(self), ga_end_rd(self));
+}
+
+void test_invalid(const genarray *self)
+{
+    const int *pi = ga_retrieve_rd(self, ga_length(self));
+    (void)pi;
+}
+
+int main(void)
+{
+    genarray ga = ga_create(sizeof(int), NULL, NULL); 
+    genarray *inst = &ga;
+    {
+        test_write(inst);
+        test_foreach(inst);
+        test_forloop(inst);
+        test_invalid(inst);
+    }
     ga_deinit(inst);
     return 0;
 }

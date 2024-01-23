@@ -81,6 +81,15 @@ struct genarray {
 };
 
 /**
+ * @brief   Create a stack-allocated instance. 
+ * 
+ * @note    Internally calls `ga_init`. See the documentation for that.
+ * 
+ * @warning Nothing is stopping you from initializing your instance twice!
+ */
+genarray ga_create(size_t n_sizeof, ga_writefn write, ga_erasefn erase);
+
+/**
  * @brief   Give the appropriate element size and callback functions (or `NULL`).
  * 
  * @note    We actually populate the internal structures with the correct
@@ -97,6 +106,30 @@ void ga_init(genarray *self, size_t n_sizeof, ga_writefn write, ga_erasefn erase
  *          `self->erase` function pointer is kinda... pointless!
  */
 void ga_deinit(genarray *self);
+
+/**
+ * BEGIN:   DATA ACCESS METHODS
+ */
+
+/**
+ * @brief   Get the number of elements currently written to the buffer.
+ */
+size_t ga_length(const genarray *self);
+
+/**
+ * @brief   Get the number of elements allocated for the buffer.
+ */
+size_t ga_capacity(const genarray *self);
+
+/**
+ * @brief   Get the number of bytes occupied by the currently written elements.
+*/
+size_t ga_bytes_length(const genarray *self);
+
+/**
+ * @brief   Get the numbe of bytes occupied by the allocated memory.
+*/
+size_t ga_bytes_capacity(const genarray *self);
 
 /**
  * @brief   Read-only pointer to the first element.
@@ -137,6 +170,10 @@ void *ga_end_wr(genarray *self);
 void *ga_retrieve_wr(genarray *self, size_t n_index);
 
 /**
+ * END:     DATA ACCESS METHODS
+ */
+
+/**
  * @brief   Append the value of `p_item` to the end of the internal buffer.
  *          If we need to resize, we will.
  * 
@@ -157,14 +194,51 @@ bool ga_push_back(genarray *self, void *p_item);
  */
 bool ga_resize(genarray *self, size_t n_newsize);
 
-#define ga_impl_foreach(var, self, T, beginfn, endfn) \
+/**
+ * BEGIN:   ITERATOR IMPLEMENTATION MACROS
+ * 
+ * BRIEF:   These allow you to select the const or non-const iterator functions.
+ *          However, please be absolutely certain these are want you want to do!
+ *
+ *          If in doubt, just use the const ones until you have a good reason
+ *          not to.
+ */
+
+#define ga_impl_foreach(T, var, self, beginfn, endfn) \
     for (T *var = beginfn(self), *end = endfn(self); var < end; var++)
 
-#define ga_foreach_rd(varname, self, T) \
-    ga_impl_foreach(varname, self, const T, ga_begin_rd, ga_end_rd)
+#define ga_foreach_rd(T, varname, self) \
+    ga_impl_foreach(const T, varname, self, ga_begin_rd, ga_end_rd)
 
-#define ga_foreach_wr(varname, self, T) \
-    ga_impl_foreach(varname, self, T, ga_begin_wr, ga_end_wr)
+#define ga_foreach_wr(T, varname, self) \
+    ga_impl_foreach(T, varname, self, ga_begin_wr, ga_end_wr)
+
+#define ga_data_rd(T, self) \
+    (const T*)ga_begin_rd(self)
+
+#define ga_data_wr(T, self) \
+    (T*)ga_begin_wr(self)
+
+/**
+ * END:     ITERATOR IMPLEMENTATION MACROS
+*/
+
+/**
+ * BEGIN:   USER-FACING MACROS
+ * 
+ * NOTE:    For our sanity, by default we use the const iterators. This should
+ *          hopefully lessen errors somewhat when modifying actual consts.
+ */
+
+#define ga_foreach(T, varname, self) \
+    ga_foreach_rd(T, varname, self)
+
+#define ga_data(T, self) \
+    ga_data_rd(T, self)
+
+/**
+ * END:     USER-FACING MACROS
+*/
 
 #ifdef __cplusplus
 }
